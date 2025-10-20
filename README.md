@@ -1,298 +1,319 @@
-# 구상중...
-    $query = {
-    		workspace = { /data }
+# 구상중... with claude.ai
+
+## 기본 문법 정리
+
+### 1. 리터럴 값 비교
+```
+$search = {
+    workspace = { /game/provinces }
+    to = { /temp/result }
+    cond = {
+        @$ = {
+            owner = "FRA"              # 정확히 일치
+            development = { $gt = 20 } # 20보다 큼
+            culture = { $in = ["french", "occitan"] }
+        }
+    }
+}
+```
+
+### 2. 다른 경로의 값 참조
+```
+$search = {
+    workspace = { /game/provinces }
+    to = { /temp/result }
+    cond = {
+        @$ = {
+            # 플레이어 소유가 아닌 것
+            owner = { $ne = $ref("/game/player/tag") }
+            
+            # 평균보다 높은 개발도
+            development = { $gt = $ref("/game/average_dev") }
+        }
+    }
+}
+```
+
+### 3. 현재 객체의 다른 필드 참조
+```
+$search = {
+    workspace = { /game/provinces }
+    to = { /temp/result }
+    cond = {
+        @$ = {
+            # 세금이 생산보다 높음
+            tax_income = { $gt = "$this.production_income" }
+            
+            # 인구가 개발도의 100배보다 많음
+            population = { $gt = { $calc = "$this.development * 100" } }
+        }
+    }
+}
+```
+
+### 4. 계산식 사용
+```
+$search = {
+    workspace = { /game/provinces }
+    to = { /temp/result }
+    cond = {
+        @$ = {
+            # 총 수입이 10 이상
+            $calc = {
+                expr = "$this.tax_income + $this.production_income"
+                $gt = 10
+            }
+        }
+    }
+}
+```
+
+### 5. 배열 조건
+```
+$search = {
+    workspace = { /game/provinces }
+    to = { /temp/result }
+    cond = {
+        @$ = {
+            # 태그 중 하나라도 포함
+            tags = { $contains = "rich" }
+            
+            # 여러 개 중 하나
+            terrain = { $in = ["mountain", "hills"] }
+            
+            # 건물이 3개 이상
+            buildings = { $count = { $gte = 3 } }
+        }
+    }
+}
+```
+
+### 6. 논리 연산
+```
+$search = {
+    workspace = { /game/provinces }
+    to = { /temp/result }
+    cond = {
+        @$ = {
+            # AND (기본)
+            owner = "FRA"
+            development = { $gt = 20 }
+            
+            # OR
+            $or = [
+                { terrain = "mountain" },
+                { has_fort = yes }
+            ]
+            
+            # NOT
+            $not = {
+                culture = "french"
+            }
+        }
+    }
+}
+```
+
+## 실전 예시
+
+### 예시 1: 부유한 province 찾아서 개발도 증가
+```
+$query = {
+    $search = {
+        workspace = { /game/provinces }
+        to = { /temp/rich }
+        cond = {
+            @$ = {
+                development = { $gt = 20 }
+                owner = "FRA"
+            }
+        }
+    }
+    
+    $update = {
+        workspace = { /game/provinces }
+        keys = { /temp/rich }
+        @development = { $add = 5 }
+        @tax_income = { $mul = 1.1 }
+    }
+}
+```
+
+### 예시 2: 적대국 찾기
+```
+$query = {
+    $search = {
+        workspace = { /game/countries }
+        to = { /temp/enemies }
+        cond = {
+            @$ = {
+                # 플레이어가 아님
+                tag = { $ne = $ref("/game/player/tag") }
+                
+                # 플레이어의 라이벌
+                $or = [
+                    { tag = { $in = $ref("/game/player/rivals") } },
+                    { rivals = { $contains = $ref("/game/player/tag") } }
+                ]
+                
+                # 군사력이 더 약함
+                military_strength = {
+                    $lt = $ref("/game/player/military_strength")
+                }
+            }
+        }
+    }
+}
+```
+
+### 예시 3: 평균 이상 province
+```
+$query = {
+    $search = {
+        workspace = { /game/provinces }
+        to = { /temp/above_average }
+        cond = {
+            @$ = {
+                development = {
+                    $gt = {
+                        $avg = "/game/provinces.*.development"
+                    }
+                }
+            }
+        }
+    }
+    
     $insert = {
-        @x = 15
-        @y = {
-            z = 0
-        } 
-        @"a" = 3
-    
-        @provinces = {
-            -1 = {
-                x = 0
-            }
-            -2 = {
-                x = 1
-            }
-        }
-        
-        @arr_test = {
-            1 2 3
-        }
+        workspace = { /game/provinces }
+        keys = { /temp/above_average }
+        @special_status = "developed"
+        @bonus_modifier = 1.1
     }
-    
-    $insert = {
-        x = 15
-    
-        provinces = {
-            $ = {
-                x = 0
-                @y = wow2
-            }
-        }
-        
-        arr_test = {
-            @&0 = 5  # insert(begin() + 0, 5)
-            @%end = 6 # push_back(6); ?
-        }
-    }
-    
-    $read = {
-        x = 15 # condition
-        provinces = {
-            @$%key_only%also_value = { # target
-                y = wow2
-            }
-        }
-    }
-    
-    $read = {
-        x = 15 # condition
-        provinces = {
-            $ = { 
-                y = wow2 # condititon
-                x = @%any # always read x`s value? ,
-                            # %also_key ? - include key also?
-            }
-        }
-    }
-    
-    <stack>
-    _VALUE [ -1, -2, -4, -6 ] # ?
-    MAKE_SET set_0 (ARRAY_SET OR HASH_SET) 
-                            # only for primitive type?
-    # chk) Merge two SET?
-    
-    $update = { # Parameter?
-        #@x = 2 # @ : target, 2 : set value
-        "a" = 3 # condition
-        y = {
-            @z = 4 # @ : target.
-        }
-        provinces = {
-            $%always_true%all%just_one_more = {
-                x = 0
-                @y = %event_test3 # %event_test2%'x = /./x' <- support?
-            }
-        }
-        
-        arr_test = {
-            &0 = %event_comp_test
-            @&1 = 3
-        }
-    }
-    
-    Event = {
-        id = comp_test
-        
-        %x%$local # declaration of local var x
-        
-        # $element_id
-        # $element_value
-        # $element_parent # to access parent or sibling?
-        
-        if %$element_value%$is_primitive {
-            %$element_value%$pos%$goto
-            %$test3
-        }
-        
-        %element_value%5%larer_than%return #
-    }
-    		
-    $delete = {
-        @x = 1 # @ : remove object., if value is 1 then remove
-        "a" = 3 # condition.
-        y = {
-            @z = %any # %any : condition - always.
-        }
-        provinces = {
-            @$ = { # $ : all usertype( array or object or mixed )
-                x = 1 # condition.
-            }
-        }
-    }
-    	}
-    	
-    $search = { # read?
-         workspace = { /Test/eu4/provinces }
-         to = { /output }
-         cond = {
-             @$ = {
-                 is_city = yes
-                 owner = "DAN"
-             }
-         }
-    }
+}
+```
 
-# 구상중...
-
-    # $Query -> set of functions..
-    
-    #  Query_${No} <- func name?
-    # workspace { /data } <- cd( data ) // . <- now, .. <- parent, root <- root
-    # $insert -> Query_${No}_0
-    # x = 10 # condition..
-    # x = 5 y = 3 # or 
-    # line by? # and
-    #1줄에 여러개 - or, 줄마다 and
-    # 위에서 아래로..
-    # iterator? - uint64_t find(key); set_idx, get_value ?
-    # @x = 15 # @ : target
-    #
-    
-    #workspace = { /data }
-    _Value data
-    CD 1 # 2
-    # $insert = { @x = 15 @y = { z = 0 } }
-    MAKE_OBJECT TEMP_0
-    _Value x # key
-    _Value 15
-    PUSH_JSON_ELEMENT TEMP_0
-    _Value y
-    _Value { z = 0 } # check..
-    PUSH_JSON_ELEMENT TEMP_0
-    INSERT_CHILD_OF TEMP_0 
-    EXIT
-    
-    # $insert = { @x = 15 y = { z = 0 } }
-    MAKE_OBJECT TEMP_1
-    _Value x
-    _Value 15
-    PUSH_JSON_ELEMENT TEMP_1
-    _Value y
-    FIND_IDX_BY_KEY
-    SET_IDX
-    ENTER  # with FIND_IDX_BY_KEY and SET_IDX 
-    _Value z # key
-    FIND_BY_KEY 
-    _Value 0
-    EQ 
-    SET_CONDITION
-    CONDITION_NOT_ZERO_GOTO +3
-    INSERT_CHILD_OF TEMP_1
-    EXIT
-    QUIT
-    INSERT_CHILD_OF TEMP_1
-    EXIT
-    
-    # $update = { a = 3 provinces = { $ = { x = 0 @y = %event_test } } }
-    MAKE_OBJECT TEMP_2
-    _Value a
-    FIND_BY_KEY 
-    _Value 3
-    EQ 
-    SET_CONDITION
-    CONDITION_NOT_ZERO_GOTO +3  
-    UPDATE_FROM_CHILD_OF TEMP2
-    EXIT
-    _Value provinces
-    FIND_IDX_BY_KEY
-    SET_IDX
-    ENTER # check
-    ITERATE FUNC_TEMP_0
-    QUIT
-    CONDITION_ZERO_GOTO +3
-    UPDATE_FROM_CHILD_OF TEMP2
-    EXIT
-    # end
-    
-    UPDATE_FROM_CHILD_OF TEMP2
-    EXIT
-    
-    # FUNC_TEMP_0
-    MAKE_OBJECT TEMP_3
-    _Value x
-    FIND_BY_KEY
-    _Value 0
-    EQ
-    SET_CONDITION
-    CONDITION_NOT_ZERO_GOTO +3
-    UPDATE_FROM_CHILD_OF TEMP_3
-    EXIT 
-    _Value y 
-    #NOT_EXIST_EXIT  # think case - y is not exist! 
-    _Value %event_test
-    CALL 0 # number of argument??
-    RETURN_VALUE
-    PUSH_JSON_ELEMENT TEMP_3 
-    UPDATE_FROM_CHILD_OF TEMP_3
-    EXIT 
-    
-    #
-    DEBUG # : print error log?
-    
-    
-    # 1. 조건들은 따로 먼저오겠끔? 처리한다?
-    # object = { a = 5 @x = 6 }
-    #-> object = { a = 5 } object = { @x = 6 }
-    # 2. 분리한다? 
-    
-    # 자식이 empty?이면 지운다..?
-    
-    # read, insert, update, delete. 
-       # + 사용자정의함수?
-    
-    
-    # key = value
-    "공격력" = 100
-    
-    # object { key = value ... }
-    "타마린느" = {
-        "공격력" = 50
-        "방어력" = 100
-        "체력" = 1000
-    }
-    
-    # array [ value ... ]
-    "영웅" = [
-        "타마린느"
-        "브리그" 
-        "이세리아"  
-    ]
-    
-    # load json file
-    # cd? goto? (query를 할 장소로 이동)
-    # query - insert(create?), read(?), update, delete
-    # { json = { } global_variable = { } }
-        #  load,         make_global_var(?)
-    # array as arary vs array as (hash)set
-    # object as array(?) vs array as (hash)map
-    # goto1 - json.
-    # goto2 - global_variable.
-    $make_global_var = { test_var }
-    $goto = { json = %root }
-    # //$goto = { global_var = %none } # global_var is not used. ?
-    # %is_in%global_test_var
-    # %is_not_in%global_test_var
-    # %value_in%in_glboal_test_var2
-    # %add_to%test_var ?
-    # %add_to%test_var2 ?
-    # 
-    $read = {
-        "a" = 3
-        provinces = {
-            @$%event_testA = {
-                is_city = yes
-                owner = @%event_testB%str # @%add_to_key%test_var%str
-            }   
+### 예시 4: 조건부 업데이트
+```
+$query = {
+    $search = {
+        workspace = { /game/provinces }
+        to = { /temp/all }
+        cond = {
+            @$ = { }  # 모두 선택
         }
     }
-    #
-    Event = {
-        id = testA
+    
+    $update = {
+        workspace = { /game/provinces }
+        keys = { /temp/all }
         
-        # %element_id <- key(in object) or idx(in array)
-        %global_var%test_var = %element_id 
+        # 개발도에 따라 다른 보너스
+        @bonus = {
+            $if = {
+                condition = { $calc = "$this.development > 30" }
+                then = { $set = 2.0 }
+                else = {
+                    $if = {
+                        condition = { $calc = "$this.development > 20" }
+                        then = { $set = 1.5 }
+                        else = { $set = 1.0 }
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+### 예시 5: 인접 지역 확인
+```
+$query = {
+    $search = {
+        workspace = { /game/provinces }
+        to = { /temp/border }
+        cond = {
+            @$ = {
+                # 플레이어 소유
+                owner = $ref("/game/player/tag")
+                
+                # 인접 지역 중 적국이 있음
+                adjacent_provinces = {
+                    $any = {
+                        $filter = {
+                            array = "$this.adjacent_provinces"
+                            condition = {
+                                # 인접 province의 owner를 확인
+                                $calc = {
+                                    adjacent_owner = "$ref('/game/provinces/' + $item).owner"
+                                    is_rival = "$contains($ref('/game/player/rivals'), adjacent_owner)"
+                                    expr = "is_rival"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     
-    Event = {
-        id = testB
-        
-        %element_value%add_to_key%test_var2
-        %global_var%test_var%add_to_value%test_var2
-        
-        # %1%3%$add # 1+3 -> 4   %input1 %input2 %$func_name
+    $update = {
+        workspace = { /game/provinces }
+        keys = { /temp/border }
+        @is_border_province = yes
+        @defense_priority = "high"
     }
-        
+}
+```
 
+### 예시 6: 복잡한 전쟁 목표 선정
+```
+$query = {
+    $search = {
+        workspace = { /game/countries }
+        to = { /temp/targets }
+        cond = {
+            @$ = {
+                # 적대 관계
+                tag = { $in = $ref("/game/player/rivals") }
+                
+                # 약한 군사력
+                military_strength = {
+                    $lt = {
+                        $calc = "$ref('/game/player/military_strength') * 1.5"
+                    }
+                }
+                
+                # 동맹이 약함
+                $calc = {
+                    expr = "$sum($map($this.allies, '$ref(/game/countries/' + $item).military_strength'))"
+                    $lt = $ref("/game/player/military_strength")
+                }
+            }
+        }
+    }
+    
+    $update = {
+        workspace = { /game/countries }
+        keys = { /temp/targets }
+        
+        # 전쟁 가치 점수
+        @war_score = {
+            $calc = {
+                territory = "$count($filter('/game/provinces', { owner = $this.tag }))"
+                strategic = "$count($filter('/game/provinces', { owner = $this.tag, has_port = yes })) * 10"
+                difficulty = "100 / max(1, $this.military_strength)"
+                expr = "territory + strategic + difficulty"
+            }
+        }
+    }
+}
+```
+
+## 핵심 규칙
+
+1. **리터럴**: `field = value`
+2. **비교**: `field = { $op = value }`
+3. **참조**: `field = { $op = $ref("/path") }`
+4. **계산**: `field = { $op = { $calc = "expr" } }`
+5. **현재 객체**: `$this.field`
+6. **조건문**: `{ $if = { condition, then, else } }`
